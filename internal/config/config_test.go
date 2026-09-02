@@ -243,3 +243,18 @@ func TestSortHosts(t *testing.T) {
 		t.Errorf("got %v, want %s", got, want)
 	}
 }
+
+func TestDefaultAuth(t *testing.T) {
+	key := filepath.Join(t.TempDir(), "id_ed25519")
+	c := &Config{Defaults: Defaults{Key: key}}
+	if got := c.DefaultAuth(); got != AuthAgent {
+		t.Errorf("missing key file: %q, want agent", got)
+	}
+	os.WriteFile(key, []byte("k"), 0o600)
+	if got := c.DefaultAuth(); got != AuthKey {
+		t.Errorf("existing key file: %q, want key", got)
+	}
+	if got := (&Config{}).DefaultAuth(); got != AuthAgent {
+		t.Errorf("no default key: %q, want agent", got)
+	}
+}

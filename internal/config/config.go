@@ -215,6 +215,13 @@ func (c *Config) Resolve(h *Host) Resolved {
 	return r
 }
 
+func (c *Config) DefaultAuth() string {
+	if c.Defaults.Key != "" && FileExists(ExpandHome(c.Defaults.Key)) {
+		return AuthKey
+	}
+	return AuthAgent
+}
+
 func (c *Config) Find(name string) *Host {
 	for i := range c.Hosts {
 		if strings.EqualFold(c.Hosts[i].Name, name) {

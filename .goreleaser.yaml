@@ -1,0 +1,66 @@
+version: 2
+
+project_name: sv
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - main: ./cmd/sv
+    binary: sv
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^ci"
+      - "^chore"
+
+homebrew_casks:
+  - name: sv
+    binaries: [sv]
+    repository:
+      owner: kianurivzzz
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/kianurivzzz/save-serve-cli
+    description: SSH host manager for the terminal
+    license: MIT
+    url:
+      verified: github.com/kianurivzzz/save-serve-cli/
+    generate_completions_from_executable:
+      executable: sv
+      args: [completion]
+      base_name: sv
+      shell_parameter_format: cobra
+      shells: [bash, zsh, fish]
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/sv"]
+          end

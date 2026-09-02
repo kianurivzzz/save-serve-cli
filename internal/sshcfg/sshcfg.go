@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	beginMarker = "# >>> sv managed - не редактировать, изменения перезапишутся >>>"
+	beginMarker = "# >>> sv managed - do not edit, changes will be overwritten >>>"
 	endMarker   = "# <<< sv managed <<<"
 	beginPrefix = "# >>> sv managed"
 	endPrefix   = "# <<< sv managed"

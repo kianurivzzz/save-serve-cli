@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -22,22 +23,38 @@ var lsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		group, _ := cmd.Flags().GetString("group")
 		tag, _ := cmd.Flags().GetString("tag")
+		asJSON, _ := cmd.Flags().GetBool("json")
 		cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}
-		return listHosts(cfg, group, tag)
+		return listHosts(cfg, group, tag, asJSON)
 	},
+}
+
+type hostJSON struct {
+	Name     string     `json:"name"`
+	Host     string     `json:"host"`
+	User     string     `json:"user"`
+	Port     int        `json:"port"`
+	Auth     string     `json:"auth"`
+	Key      string     `json:"key"`
+	Group    string     `json:"group"`
+	Tags     []string   `json:"tags"`
+	Jump     string     `json:"jump"`
+	Note     string     `json:"note"`
+	LastUsed *time.Time `json:"last_used"`
 }
 
 func init() {
 	lsCmd.Flags().String("group", "", "only hosts in this group")
 	lsCmd.Flags().String("tag", "", "only hosts with this tag")
+	lsCmd.Flags().Bool("json", false, "print a JSON array instead of a table")
 	lsCmd.RegisterFlagCompletionFunc("group", completeGroup)
 	rootCmd.AddCommand(lsCmd)
 }
 
-func listHosts(cfg *config.Config, group, tag string) error {
+func listHosts(cfg *config.Config, group, tag string, asJSON bool) error {
 	hosts := make([]*config.Host, 0, len(cfg.Hosts))
 	for i := range cfg.Hosts {
 		h := &cfg.Hosts[i]
@@ -49,12 +66,15 @@ func listHosts(cfg *config.Config, group, tag string) error {
 		}
 		hosts = append(hosts, h)
 	}
+	state := config.LoadState()
+	config.SortHosts(cfg, state, hosts)
+	if asJSON {
+		return printJSON(cfg, state, hosts)
+	}
 	if len(hosts) == 0 {
 		fmt.Fprintln(os.Stderr, "no hosts")
 		return nil
 	}
-	state := config.LoadState()
-	config.SortHosts(cfg, state, hosts)
 	now := time.Now()
 	rows := make([][]string, 0, len(hosts))
 	for _, h := range hosts {
@@ -89,6 +109,35 @@ func listHosts(cfg *config.Config, group, tag string) error {
 		})
 	fmt.Println(t)
 	return nil
+}
+
+func printJSON(cfg *config.Config, state *config.State, hosts []*config.Host) error {
+	out := make([]hostJSON, 0, len(hosts))
+	for _, h := range hosts {
+		r := cfg.Resolve(h)
+		j := hostJSON{
+			Name:  h.Name,
+			Host:  h.Host,
+			User:  r.User,
+			Port:  r.Port,
+			Auth:  r.Auth,
+			Key:   r.Key,
+			Group: h.Group,
+			Tags:  h.Tags,
+			Jump:  h.Jump,
+			Note:  h.Note,
+		}
+		if j.Tags == nil {
+			j.Tags = []string{}
+		}
+		if t := state.Last(h.Name); !t.IsZero() {
+			j.LastUsed = &t
+		}
+		out = append(out, j)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 func hasTag(h *config.Host, tag string) bool {

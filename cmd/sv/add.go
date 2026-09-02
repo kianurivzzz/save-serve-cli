@@ -52,10 +52,7 @@ func init() {
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if errors.Is(err, config.ErrNotFound) {
-		cfg, err = config.New(), nil
-	}
+	cfg, err := loadOrNewConfig()
 	if err != nil {
 		return err
 	}
@@ -104,10 +101,8 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		}
 	case addFlags.agent:
 		h.Auth = config.AuthAgent
-	case cfg.Defaults.Key != "" && config.FileExists(config.ExpandHome(cfg.Defaults.Key)):
-		h.Auth = config.AuthKey
 	default:
-		h.Auth = config.AuthAgent
+		h.Auth = cfg.DefaultAuth()
 	}
 	if h.Jump != "" && cfg.Find(h.Jump) == nil {
 		return fmt.Errorf("jump host %q not found", h.Jump)

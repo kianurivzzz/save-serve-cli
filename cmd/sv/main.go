@@ -55,7 +55,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 	if len(args) == 0 {
 		if !isTerminal() {
-			return listHosts(cfg, "", "")
+			return listHosts(cfg, "", "", false)
 		}
 		return pickAndConnect(cfg, "", nil)
 	}
@@ -145,10 +145,18 @@ func isTerminal() bool {
 func loadConfig() (*config.Config, error) {
 	cfg, err := config.Load()
 	if errors.Is(err, config.ErrNotFound) {
-		return nil, fmt.Errorf("%s does not exist yet\n  import from ~/.ssh/config:  sv import ssh-config\n  or add a host by hand:      sv add <name> [user@]host[:port]", config.Path())
+		return nil, fmt.Errorf("%s does not exist yet\n  import from ~/.ssh/config:  sv import ssh-config\n  import a Termius export:    sv import termius hosts.csv\n  or add a host by hand:      sv add <name> [user@]host[:port]", config.CollapseHome(config.Path()))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%w\n  fix it with: sv edit", err)
+	}
+	return cfg, err
+}
+
+func loadOrNewConfig() (*config.Config, error) {
+	cfg, err := config.Load()
+	if errors.Is(err, config.ErrNotFound) {
+		return config.New(), nil
 	}
 	return cfg, err
 }
@@ -175,7 +183,7 @@ func syncSSHConfig(cfg *config.Config) error {
 	if err := sshcfg.Write(cfg); err != nil {
 		return fmt.Errorf("sync %s: %w", sshcfg.Path(), err)
 	}
-	fmt.Fprintf(os.Stderr, "synced %d hosts to %s\n", len(cfg.Hosts), sshcfg.Path())
+	fmt.Fprintf(os.Stderr, "synced %d hosts to %s\n", len(cfg.Hosts), config.CollapseHome(sshcfg.Path()))
 	return nil
 }
 
