@@ -2,18 +2,23 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/kianurivzzz/save-serve-cli/internal/config"
+	"github.com/kianurivzzz/save-serve-cli/internal/keychain"
 )
 
 var rmCmd = &cobra.Command{
-	Use:   "rm <name>",
-	Short: "Remove a host",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runRm,
+	Use:               "rm <name>",
+	Short:             "Remove a host and its stored password",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeHostFirstArg,
+	RunE:              runRm,
 }
 
 func init() {
@@ -55,6 +60,16 @@ func runRm(cmd *cobra.Command, args []string) error {
 	cfg.Remove(name)
 	if err := saveAndSync(cfg); err != nil {
 		return err
+	}
+	if store, err := openStore(cfg, ""); err == nil {
+		if err := store.Delete(name); err != nil && !errors.Is(err, keychain.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "warning: cannot remove password from %s: %v\n", store.Kind(), err)
+		}
+	}
+	st := config.LoadState()
+	st.Forget(name)
+	if err := st.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot save %s: %v\n", config.StatePath(), err)
 	}
 	fmt.Fprintf(os.Stderr, "removed %s\n", name)
 	return nil

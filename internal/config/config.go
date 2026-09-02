@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -28,9 +29,10 @@ type Config struct {
 }
 
 type Defaults struct {
-	User string `yaml:"user,omitempty"`
-	Port int    `yaml:"port,omitempty"`
-	Key  string `yaml:"key,omitempty"`
+	User        string `yaml:"user,omitempty"`
+	Port        int    `yaml:"port,omitempty"`
+	Key         string `yaml:"key,omitempty"`
+	SecretStore string `yaml:"secret_store,omitempty"`
 }
 
 type Group struct {
@@ -164,10 +166,21 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("host %q: jump %q is not a known host", h.Name, h.Jump)
 		}
 	}
+	seen := make(map[string]bool, len(c.Groups))
 	for i, g := range c.Groups {
 		if g.Name == "" {
 			return fmt.Errorf("group #%d: name is empty", i+1)
 		}
+		lower := strings.ToLower(g.Name)
+		if seen[lower] {
+			return fmt.Errorf("group %q: duplicate name", g.Name)
+		}
+		seen[lower] = true
+	}
+	switch c.Defaults.SecretStore {
+	case "", "keychain", "file":
+	default:
+		return fmt.Errorf("defaults.secret_store must be keychain or file, got %q", c.Defaults.SecretStore)
 	}
 	return nil
 }
@@ -246,6 +259,22 @@ func (c *Config) EnsureGroup(name string) {
 		}
 	}
 	c.Groups = append(c.Groups, Group{Name: name})
+}
+
+func (c *Config) RemoveGroup(name string) int {
+	idx := c.GroupIndex(name)
+	if idx < 0 {
+		return -1
+	}
+	c.Groups = append(c.Groups[:idx], c.Groups[idx+1:]...)
+	moved := 0
+	for i := range c.Hosts {
+		if strings.EqualFold(c.Hosts[i].Group, name) {
+			c.Hosts[i].Group = ""
+			moved++
+		}
+	}
+	return moved
 }
 
 func (c *Config) GroupIndex(name string) int {
@@ -336,4 +365,32 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Config) GroupRank(group string) int {
+	if group == "" {
+		return len(c.Groups) + 1
+	}
+	if i := c.GroupIndex(group); i >= 0 {
+		return i
+	}
+	return len(c.Groups)
+}
+
+func SortHosts(c *Config, s *State, hosts []*Host) {
+	sort.SliceStable(hosts, func(i, j int) bool {
+		a, b := hosts[i], hosts[j]
+		if ra, rb := c.GroupRank(a.Group), c.GroupRank(b.Group); ra != rb {
+			return ra < rb
+		}
+		if ga, gb := strings.ToLower(a.Group), strings.ToLower(b.Group); ga != gb {
+			return ga < gb
+		}
+		if s != nil {
+			if la, lb := s.Last(a.Name), s.Last(b.Name); !la.Equal(lb) {
+				return la.After(lb)
+			}
+		}
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+	})
 }

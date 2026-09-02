@@ -13,21 +13,24 @@ import (
 )
 
 var addFlags struct {
-	user  string
-	port  int
-	key   string
-	agent bool
-	group string
-	tags  []string
-	jump  string
-	note  string
+	user     string
+	port     int
+	key      string
+	agent    bool
+	password bool
+	store    string
+	group    string
+	tags     []string
+	jump     string
+	note     string
 }
 
 var addCmd = &cobra.Command{
-	Use:   "add <name> [user@]host[:port]",
-	Short: "Add a host",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runAdd,
+	Use:               "add <name> [user@]host[:port]",
+	Short:             "Add a host",
+	Args:              cobra.ExactArgs(2),
+	ValidArgsFunction: noCompletion,
+	RunE:              runAdd,
 }
 
 func init() {
@@ -36,10 +39,15 @@ func init() {
 	f.IntVar(&addFlags.port, "port", 0, "ssh port")
 	f.StringVar(&addFlags.key, "key", "", "private key path (auth: key)")
 	f.BoolVar(&addFlags.agent, "agent", false, "authenticate via ssh-agent (auth: agent)")
+	f.BoolVar(&addFlags.password, "password", false, "ask for a password and store it (auth: password)")
+	f.StringVar(&addFlags.store, "store", "", "where to keep the password: keychain or file")
 	f.StringVar(&addFlags.group, "group", "", "group name")
 	f.StringArrayVar(&addFlags.tags, "tag", nil, "tag, repeatable")
 	f.StringVar(&addFlags.jump, "jump", "", "name of the jump host (ProxyJump)")
 	f.StringVar(&addFlags.note, "note", "", "free-form note")
+	addCmd.RegisterFlagCompletionFunc("group", completeGroup)
+	addCmd.RegisterFlagCompletionFunc("jump", completeHost)
+	addCmd.RegisterFlagCompletionFunc("store", completeStore)
 	rootCmd.AddCommand(addCmd)
 }
 
@@ -71,9 +79,23 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	h.Jump = addFlags.jump
 	h.Note = addFlags.note
 
+	authFlags := 0
+	for _, set := range []bool{addFlags.key != "", addFlags.agent, addFlags.password} {
+		if set {
+			authFlags++
+		}
+	}
+	if authFlags > 1 {
+		return errors.New("--key, --agent and --password are mutually exclusive")
+	}
+	var password string
 	switch {
-	case addFlags.key != "" && addFlags.agent:
-		return errors.New("--key and --agent are mutually exclusive")
+	case addFlags.password:
+		h.Auth = config.AuthPassword
+		password, err = promptPassword(name)
+		if err != nil {
+			return err
+		}
 	case addFlags.key != "":
 		h.Auth = config.AuthKey
 		h.Key = config.CollapseHome(addFlags.key)
@@ -92,6 +114,15 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 	if h.Group != "" {
 		cfg.EnsureGroup(h.Group)
+	}
+	if password != "" {
+		store, err := openStore(cfg, addFlags.store)
+		if err != nil {
+			return err
+		}
+		if err := store.Set(name, password); err != nil {
+			return err
+		}
 	}
 	cfg.Hosts = append(cfg.Hosts, h)
 	if err := saveAndSync(cfg); err != nil {

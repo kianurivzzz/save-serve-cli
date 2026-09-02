@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -182,5 +183,63 @@ func TestRemoveAndEnsureGroup(t *testing.T) {
 	c.EnsureGroup("PROD")
 	if len(c.Groups) != 1 {
 		t.Errorf("groups: %+v", c.Groups)
+	}
+}
+
+func TestValidateGroupsAndStore(t *testing.T) {
+	c := Config{Groups: []Group{{Name: "a"}, {Name: "A"}}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("dup group: %v", err)
+	}
+	c = Config{Defaults: Defaults{SecretStore: "vault"}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "secret_store") {
+		t.Errorf("bad store: %v", err)
+	}
+	c = Config{Defaults: Defaults{SecretStore: "file"}}
+	if err := c.Validate(); err != nil {
+		t.Errorf("file store: %v", err)
+	}
+}
+
+func TestRemoveGroup(t *testing.T) {
+	c := &Config{
+		Groups: []Group{{Name: "a"}, {Name: "b"}},
+		Hosts:  []Host{{Name: "x", Host: "h", Group: "A"}, {Name: "y", Host: "h", Group: "b"}},
+	}
+	if n := c.RemoveGroup("a"); n != 1 || len(c.Groups) != 1 || c.Hosts[0].Group != "" || c.Hosts[1].Group != "b" {
+		t.Errorf("remove: n=%d groups=%+v hosts=%+v", n, c.Groups, c.Hosts)
+	}
+	if n := c.RemoveGroup("zzz"); n != -1 {
+		t.Errorf("missing group: %d", n)
+	}
+}
+
+func TestSortHosts(t *testing.T) {
+	c := &Config{
+		Groups: []Group{{Name: "work"}, {Name: "home"}},
+		Hosts: []Host{
+			{Name: "z-none", Host: "h"},
+			{Name: "b-home", Host: "h", Group: "home"},
+			{Name: "old-work", Host: "h", Group: "work"},
+			{Name: "new-work", Host: "h", Group: "work"},
+			{Name: "a-unknown", Host: "h", Group: "other"},
+		},
+	}
+	s := &State{LastUsed: map[string]time.Time{
+		"old-work": time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		"new-work": time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+	}}
+	hosts := make([]*Host, len(c.Hosts))
+	for i := range c.Hosts {
+		hosts[i] = &c.Hosts[i]
+	}
+	SortHosts(c, s, hosts)
+	var got []string
+	for _, h := range hosts {
+		got = append(got, h.Name)
+	}
+	want := "new-work old-work b-home a-unknown z-none"
+	if strings.Join(got, " ") != want {
+		t.Errorf("got %v, want %s", got, want)
 	}
 }
