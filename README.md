@@ -17,7 +17,7 @@ I used Termius for years, then moved my whole workflow into the terminal and got
 Homebrew:
 
 ```sh
-brew install kianurivzzz/tap/sv
+brew install --cask kianurivzzz/tap/sv
 ```
 
 Go:
