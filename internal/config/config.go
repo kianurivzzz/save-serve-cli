@@ -33,6 +33,11 @@ type Defaults struct {
 	Port        int    `yaml:"port,omitempty"`
 	Key         string `yaml:"key,omitempty"`
 	SecretStore string `yaml:"secret_store,omitempty"`
+	AutoSetup   *bool  `yaml:"auto_setup,omitempty"`
+}
+
+func (d Defaults) AutoSetupEnabled() bool {
+	return d.AutoSetup == nil || *d.AutoSetup
 }
 
 type Group struct {
@@ -50,6 +55,7 @@ type Host struct {
 	Group string   `yaml:"group,omitempty"`
 	Tags  []string `yaml:"tags,omitempty,flow"`
 	Jump  string   `yaml:"jump,omitempty"`
+	Tmux  bool     `yaml:"tmux,omitempty"`
 	Note  string   `yaml:"note,omitempty"`
 }
 

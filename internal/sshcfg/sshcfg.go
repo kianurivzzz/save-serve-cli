@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kianurivzzz/save-serve-cli/internal/config"
+	"github.com/kianurivzzz/save-serve-cli/internal/connect"
 )
 
 const (
@@ -35,6 +36,8 @@ func Render(c *config.Config) string {
 		fmt.Fprintf(&b, "    HostName %s\n", h.Host)
 		fmt.Fprintf(&b, "    User %s\n", r.User)
 		fmt.Fprintf(&b, "    Port %d\n", r.Port)
+		fmt.Fprintf(&b, "    ServerAliveInterval %d\n", connect.KeepAliveInterval)
+		fmt.Fprintf(&b, "    ServerAliveCountMax %d\n", connect.KeepAliveCount)
 		if r.Auth == config.AuthKey && r.Key != "" {
 			fmt.Fprintf(&b, "    IdentityFile %s\n", r.Key)
 			b.WriteString("    IdentitiesOnly yes\n")
@@ -104,6 +107,9 @@ func WriteTo(path string, c *config.Config) error {
 	merged, err := Merge(string(existing), Render(c))
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
+	}
+	if exists && merged == string(existing) {
+		return nil
 	}
 	mode := os.FileMode(0o600)
 	if exists {

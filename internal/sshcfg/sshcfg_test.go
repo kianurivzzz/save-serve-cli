@@ -29,10 +29,10 @@ func TestRender(t *testing.T) {
 	got := Render(c)
 	want := []string{
 		beginMarker,
-		"Host coolify\n    HostName 1.2.3.4\n    User root\n    Port 22\n    IdentityFile " + c.Defaults.Key + "\n    IdentitiesOnly yes\n",
-		"Host CashCow\n    HostName cashcow.example.com\n    User root\n    Port 22\n",
-		"Host bastion\n    HostName b.example.com\n    User ops\n    Port 2222\n",
-		"Host inner\n    HostName 10.0.0.5\n    User root\n    Port 22\n    ProxyJump bastion\n",
+		"Host coolify\n    HostName 1.2.3.4\n    User root\n    Port 22\n    ServerAliveInterval 15\n    ServerAliveCountMax 4\n    IdentityFile " + c.Defaults.Key + "\n    IdentitiesOnly yes\n",
+		"Host CashCow\n    HostName cashcow.example.com\n    User root\n    Port 22\n    ServerAliveInterval 15\n    ServerAliveCountMax 4\n",
+		"Host bastion\n    HostName b.example.com\n    User ops\n    Port 2222\n    ServerAliveInterval 15\n    ServerAliveCountMax 4\n",
+		"Host inner\n    HostName 10.0.0.5\n    User root\n    Port 22\n    ServerAliveInterval 15\n    ServerAliveCountMax 4\n    ProxyJump bastion\n",
 		endMarker + "\n",
 	}
 	for _, w := range want {

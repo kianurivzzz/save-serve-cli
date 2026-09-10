@@ -42,6 +42,7 @@ type hostJSON struct {
 	Group    string     `json:"group"`
 	Tags     []string   `json:"tags"`
 	Jump     string     `json:"jump"`
+	Tmux     bool       `json:"tmux"`
 	Note     string     `json:"note"`
 	LastUsed *time.Time `json:"last_used"`
 }
@@ -125,6 +126,7 @@ func printJSON(cfg *config.Config, state *config.State, hosts []*config.Host) er
 			Group: h.Group,
 			Tags:  h.Tags,
 			Jump:  h.Jump,
+			Tmux:  h.Tmux,
 			Note:  h.Note,
 		}
 		if j.Tags == nil {

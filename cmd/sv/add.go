@@ -22,6 +22,7 @@ var addFlags struct {
 	group    string
 	tags     []string
 	jump     string
+	tmux     bool
 	note     string
 }
 
@@ -44,6 +45,7 @@ func init() {
 	f.StringVar(&addFlags.group, "group", "", "group name")
 	f.StringArrayVar(&addFlags.tags, "tag", nil, "tag, repeatable")
 	f.StringVar(&addFlags.jump, "jump", "", "name of the jump host (ProxyJump)")
+	f.BoolVar(&addFlags.tmux, "tmux", false, "attach to a tmux session on the server that survives disconnects")
 	f.StringVar(&addFlags.note, "note", "", "free-form note")
 	addCmd.RegisterFlagCompletionFunc("group", completeGroup)
 	addCmd.RegisterFlagCompletionFunc("jump", completeHost)
@@ -74,6 +76,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	h.Group = addFlags.group
 	h.Tags = addFlags.tags
 	h.Jump = addFlags.jump
+	h.Tmux = addFlags.tmux
 	h.Note = addFlags.note
 
 	authFlags := 0

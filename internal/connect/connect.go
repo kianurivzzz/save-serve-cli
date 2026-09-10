@@ -15,9 +15,21 @@ import (
 
 const askpassScript = "#!/bin/sh\nprintf '%s' \"$SV_PASS\"\n"
 
+const (
+	KeepAliveInterval = 15
+	KeepAliveCount    = 4
+	TmuxSession       = "main"
+)
+
+const tmuxCommand = "command -v tmux >/dev/null && exec tmux new-session -A -s " + TmuxSession +
+	"; echo 'sv: tmux is not installed on this server, starting a plain shell' >&2; exec \"$SHELL\" -l"
+
 func Args(c *config.Config, h *config.Host, remote []string) []string {
 	r := c.Resolve(h)
-	args := []string{"ssh", "-p", strconv.Itoa(r.Port)}
+	args := []string{"ssh", "-p", strconv.Itoa(r.Port),
+		"-o", "ServerAliveInterval=" + strconv.Itoa(KeepAliveInterval),
+		"-o", "ServerAliveCountMax=" + strconv.Itoa(KeepAliveCount),
+	}
 	switch r.Auth {
 	case config.AuthKey:
 		if r.Key != "" {
@@ -32,6 +44,10 @@ func Args(c *config.Config, h *config.Host, remote []string) []string {
 	}
 	if h.Jump != "" {
 		args = append(args, "-J", h.Jump)
+	}
+	if h.Tmux && len(remote) == 0 {
+		args = append(args, "-t")
+		remote = []string{tmuxCommand}
 	}
 	args = append(args, "--", r.User+"@"+h.Host)
 	args = append(args, remote...)

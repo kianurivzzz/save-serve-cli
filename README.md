@@ -9,6 +9,7 @@ I used Termius for years, then moved my whole workflow into the terminal and got
 - Hosts live in `~/.config/sv/hosts.yaml`. Edit it by hand or through the CLI, both work.
 - Every host is written into a managed block of `~/.ssh/config`, so `ssh coolify` works in any tool that has never heard of `sv`.
 - Key, ssh-agent and password auth. Passwords go to macOS Keychain or Secret Service, no `sshpass`.
+- Keepalive on every connection, optional tmux session that survives a dropped Wi-Fi or a closed laptop, and `sv setup` that makes the server save shell history after every command.
 - No SSH implementation of its own. `sv` builds the arguments and replaces itself with `ssh`, so signals, pty and resize are handled by ssh.
 - `sv ls --json` for scripts and AI agents.
 
@@ -47,15 +48,16 @@ sv coolify docker ps                      # run a command and exit
 |---|---|
 | `sv` | Interactive list. Type to filter, `↑↓` or `ctrl+j`/`ctrl+k` to move, `tab` to cycle groups, `enter` to connect, `ctrl+e` to edit the YAML, `esc` to quit. |
 | `sv <name> [command...]` | Connect. Fuzzy match on the name. Several matches open the list with the filter prefilled. Anything after the name runs remotely, like `ssh host cmd`. Use `--` if the command starts with a dash. |
-| `sv add <name> [user@]host[:port]` | Flags: `--user`, `--port`, `--key <path>`, `--agent`, `--password`, `--group`, `--tag` (repeatable), `--jump <name>`, `--note`, `--store keychain\|file`. |
+| `sv add <name> [user@]host[:port]` | Flags: `--user`, `--port`, `--key <path>`, `--agent`, `--password`, `--group`, `--tag` (repeatable), `--jump <name>`, `--tmux`, `--note`, `--store keychain\|file`. |
 | `sv ls [--group g] [--tag t] [--json]` | Table sorted by group, then by last use. |
 | `sv rm <name> [-y]` | Removes the host and its stored password. Refuses if another host uses it as a jump. |
 | `sv edit [name]` | Opens `hosts.yaml` in `$EDITOR`, jumps to the host, validates and syncs on exit. |
 | `sv group ls \| add \| rm \| mv` | Groups and colors. `sv group mv <host> <group>` moves a host. |
 | `sv passwd <name>` | Stores or replaces a password and switches the host to `auth: password`. |
+| `sv setup <name>` | Writes a managed block into `~/.bashrc` or `~/.zshrc` on the server so history is saved after every command. Runs on its own the first time you connect to a host. |
 | `sv import ssh-config [path]` | Imports every `Host` without wildcards into group `imported`. |
 | `sv import termius <file.csv>` | Imports a Termius CSV export, see below. |
-| `sv sync` | Rebuilds the block in `~/.ssh/config`. Runs on its own after every change. |
+| `sv sync` | Rebuilds the block in `~/.ssh/config`. Runs on its own after every change and before every connection. |
 | `sv completion <shell>` | Completion for bash, zsh, fish with host names. |
 
 If a name is not an exact match, `sv` tries substring first, then subsequence: `sv cc` finds `CashCow` when nothing else fits.
@@ -89,6 +91,7 @@ hosts:
     port: 2222
     group: work
     jump: bastion
+    tmux: true
 
   - name: cashcow
     host: cashcow.example.com
@@ -99,9 +102,10 @@ hosts:
 - `name` is case-insensitive, must not contain spaces, and doubles as the ssh alias.
 - `auth` is `key`, `agent` or `password`. When omitted, `sv` uses `key` if `defaults.key` exists on disk, otherwise `agent`.
 - `jump` names another host from the file and becomes `ProxyJump`.
+- `tmux: true` makes `sv <name>` attach to a tmux session named `main` on the server, see below.
 - Group `color` is a name (`green`, `orange`, `purple`, ...), an ANSI code `0`–`255` or `#rrggbb`. Groups without a color get one from a small palette.
 - The file is created with mode `0600`, the directory with `0700`. `SV_CONFIG` overrides the path.
-- `state.json` next to it records when each host was last used. It is written before `ssh` starts, so a failed connection counts too.
+- `state.json` next to it records when each host was last used and which hosts got `sv setup`. It is written before `ssh` starts, so a failed connection counts too.
 
 ## What lands in ~/.ssh/config
 
@@ -111,6 +115,8 @@ Host coolify
     HostName 1.2.3.4
     User root
     Port 22
+    ServerAliveInterval 15
+    ServerAliveCountMax 4
     IdentityFile ~/.ssh/id_ed25519
     IdentitiesOnly yes
 
@@ -118,12 +124,31 @@ Host cashcow
     HostName cashcow.example.com
     User root
     Port 22
+    ServerAliveInterval 15
+    ServerAliveCountMax 4
 # <<< sv managed <<<
 ```
 
 Only this block is touched, the rest of the file is left alone. The first write saves a copy as `~/.ssh/config.sv-backup`. Password hosts are listed too, so `ssh cashcow` works with a manual password prompt.
 
 `sv` does not wrap ssh options. Port forwarding, `-o` and friends go through the alias: `ssh -L 8080:localhost:80 coolify`.
+
+## Sessions and history
+
+Two things go wrong with plain ssh on a laptop. The connection dies when the machine sleeps or changes network, and ssh does not notice: the terminal freezes until you close it. And bash writes its history only when the shell exits, so a session that dies this way overwrites what other sessions saved, and commands go missing.
+
+`sv` handles it in three layers.
+
+**Keepalive.** Every connection and every alias in `~/.ssh/config` gets `ServerAliveInterval 15` and `ServerAliveCountMax 4`. A dead connection is detected within a minute and ssh exits with `Timeout, server not responding` instead of hanging. If a session still hangs, press `Enter`, then `~` and `.`, ssh quits without closing the terminal.
+
+**tmux.** With `tmux: true` in the YAML or `--tmux` on `sv add`, `sv <name>` runs `tmux new-session -A -s main` on the server. After a drop, `sv <name>` again lands in the same session with the same processes and scrollback. Needs tmux on the server. When it is missing `sv` says so and opens a plain shell. `sv <name> <command>` and `ssh <name>` are not affected.
+
+**History.** The first time you connect to a host, `sv` runs a short setup script over ssh before opening the shell. It appends a managed block to `~/.bashrc` or `~/.zshrc` on the server: `histappend`, `history -a` after every command, a bigger history and timestamps. Zsh gets `INC_APPEND_HISTORY` and friends. The block sits between the same kind of markers as in `~/.ssh/config` and is replaced on the next run, so `sv setup <name>` is safe to repeat. Takes effect in new sessions. Hosts that were set up are listed in `state.json`; a connection error leaves the host unmarked and `sv` tries again next time. Set `defaults.auto_setup: false` in the YAML to turn this off and run `sv setup` by hand.
+
+```sh
+sv add coolify root@1.2.3.4 --tmux
+sv coolify               # sets up history, then attaches to tmux
+```
 
 ## Passwords
 

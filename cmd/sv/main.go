@@ -104,33 +104,41 @@ func pickAndConnect(cfg *config.Config, filter string, remote []string) error {
 
 func connectTo(cfg *config.Config, h *config.Host, remote []string) error {
 	argv := connect.Args(cfg, h, remote)
-	env := os.Environ()
-	if cfg.Resolve(h).Auth == config.AuthPassword {
-		if err := connect.CheckAskpassSupport(); err != nil {
-			return err
-		}
-		store, err := keychain.Open(cfg.Defaults.SecretStore)
-		if err != nil {
-			return err
-		}
-		pw, err := store.Get(h.Name)
-		if errors.Is(err, keychain.ErrNotFound) {
-			return fmt.Errorf("no password stored for %q, run: sv passwd %s", h.Name, h.Name)
-		}
-		if err != nil {
-			return err
-		}
-		env, err = connect.PasswordEnv(pw)
-		if err != nil {
-			return err
-		}
+	env, err := connectEnv(cfg, h)
+	if err != nil {
+		return err
+	}
+	if err := sshcfg.Write(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: sync %s: %v\n", sshcfg.Path(), err)
 	}
 	st := config.LoadState()
+	autoSetup(cfg, h, st)
 	st.Touch(h.Name)
 	if err := st.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: cannot save %s: %v\n", config.StatePath(), err)
 	}
 	return connect.Exec(argv, env)
+}
+
+func connectEnv(cfg *config.Config, h *config.Host) ([]string, error) {
+	if cfg.Resolve(h).Auth != config.AuthPassword {
+		return os.Environ(), nil
+	}
+	if err := connect.CheckAskpassSupport(); err != nil {
+		return nil, err
+	}
+	store, err := keychain.Open(cfg.Defaults.SecretStore)
+	if err != nil {
+		return nil, err
+	}
+	pw, err := store.Get(h.Name)
+	if errors.Is(err, keychain.ErrNotFound) {
+		return nil, fmt.Errorf("no password stored for %q, run: sv passwd %s", h.Name, h.Name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return connect.PasswordEnv(pw)
 }
 
 func isTerminal() bool {

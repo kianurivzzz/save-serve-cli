@@ -11,6 +11,7 @@ import (
 
 type State struct {
 	LastUsed map[string]time.Time `json:"last_used"`
+	Setup    map[string]time.Time `json:"setup,omitempty"`
 }
 
 func StatePath() string {
@@ -33,12 +34,25 @@ func LoadStateFrom(path string) *State {
 	return s
 }
 
+func (s *State) SetupDone(name string) bool {
+	_, ok := s.Setup[strings.ToLower(name)]
+	return ok
+}
+
+func (s *State) MarkSetup(name string) {
+	if s.Setup == nil {
+		s.Setup = map[string]time.Time{}
+	}
+	s.Setup[strings.ToLower(name)] = time.Now().UTC().Truncate(time.Second)
+}
+
 func (s *State) Touch(name string) {
 	s.LastUsed[strings.ToLower(name)] = time.Now().UTC().Truncate(time.Second)
 }
 
 func (s *State) Forget(name string) {
 	delete(s.LastUsed, strings.ToLower(name))
+	delete(s.Setup, strings.ToLower(name))
 }
 
 func (s *State) Last(name string) time.Time {

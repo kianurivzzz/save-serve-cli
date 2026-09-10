@@ -2,6 +2,7 @@ package connect
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ func TestArgs(t *testing.T) {
 			{Name: "a", Host: "2.2.2.2", User: "ops", Port: 2222, Auth: config.AuthAgent},
 			{Name: "j", Host: "3.3.3.3", Auth: config.AuthAgent, Jump: "a"},
 			{Name: "p", Host: "4.4.4.4", Auth: config.AuthPassword},
+			{Name: "t", Host: "5.5.5.5", Auth: config.AuthAgent, Tmux: true},
 		},
 	}
 	cases := []struct {
@@ -26,10 +28,12 @@ func TestArgs(t *testing.T) {
 		remote []string
 		want   string
 	}{
-		{"k", nil, "ssh -p 22 -i " + key + " -o IdentitiesOnly=yes -- root@1.2.3.4"},
-		{"a", []string{"docker", "ps"}, "ssh -p 2222 -- ops@2.2.2.2 docker ps"},
-		{"j", []string{"-weird"}, "ssh -p 22 -J a -- root@3.3.3.3 -weird"},
-		{"p", nil, "ssh -p 22 -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=accept-new -- root@4.4.4.4"},
+		{"k", nil, "ssh -p 22 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -i " + key + " -o IdentitiesOnly=yes -- root@1.2.3.4"},
+		{"a", []string{"docker", "ps"}, "ssh -p 2222 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -- ops@2.2.2.2 docker ps"},
+		{"j", []string{"-weird"}, "ssh -p 22 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -J a -- root@3.3.3.3 -weird"},
+		{"p", nil, "ssh -p 22 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=accept-new -- root@4.4.4.4"},
+		{"t", nil, "ssh -p 22 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -t -- root@5.5.5.5 " + tmuxCommand},
+		{"t", []string{"uptime"}, "ssh -p 22 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -- root@5.5.5.5 uptime"},
 	}
 	for _, tc := range cases {
 		got := Args(c, c.Find(tc.host), tc.remote)
@@ -96,5 +100,35 @@ func TestCheckVersion(t *testing.T) {
 		if !ok && (err == nil || !strings.Contains(err.Error(), "8.4")) {
 			t.Errorf("%q: want version error, got %v", out, err)
 		}
+	}
+}
+
+func TestTmuxCommand(t *testing.T) {
+	bin := t.TempDir()
+	fakeShell := filepath.Join(bin, "fakesh")
+	os.WriteFile(fakeShell, []byte("#!/bin/sh\necho SHELL \"$@\"\n"), 0o755)
+	for _, sh := range []string{"sh", "bash", "zsh"} {
+		if _, err := exec.LookPath(sh); err != nil {
+			continue
+		}
+		run := func(path string) string {
+			c := exec.Command(sh, "-c", tmuxCommand)
+			c.Env = []string{"PATH=" + path, "SHELL=" + fakeShell}
+			out, err := c.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s: %v: %s", sh, err, out)
+			}
+			return string(out)
+		}
+		out := run("/usr/bin:/bin")
+		if !strings.Contains(out, "tmux is not installed") || !strings.Contains(out, "SHELL -l") {
+			t.Errorf("%s without tmux: %q", sh, out)
+		}
+		os.WriteFile(filepath.Join(bin, "tmux"), []byte("#!/bin/sh\necho TMUX \"$@\"\n"), 0o755)
+		out = run(bin + ":/usr/bin:/bin")
+		if out != "TMUX new-session -A -s main\n" {
+			t.Errorf("%s with tmux: %q", sh, out)
+		}
+		os.Remove(filepath.Join(bin, "tmux"))
 	}
 }
