@@ -120,12 +120,12 @@ func TestTmuxCommand(t *testing.T) {
 			}
 			return string(out)
 		}
-		out := run("/usr/bin:/bin")
+		out := run(t.TempDir())
 		if !strings.Contains(out, "tmux is not installed") || !strings.Contains(out, "SHELL -l") {
 			t.Errorf("%s without tmux: %q", sh, out)
 		}
 		os.WriteFile(filepath.Join(bin, "tmux"), []byte("#!/bin/sh\necho TMUX \"$@\"\n"), 0o755)
-		out = run(bin + ":/usr/bin:/bin")
+		out = run(bin)
 		if out != "TMUX new-session -A -s main\n" {
 			t.Errorf("%s with tmux: %q", sh, out)
 		}
