@@ -10,6 +10,9 @@ HISTSIZE=100000
 HISTFILESIZE=200000
 HISTCONTROL=ignoreboth
 HISTTIMEFORMAT='%F %T '
+case "${HISTFILE:-/dev/null}" in
+  /dev/null) HISTFILE=$HOME/.bash_history ;;
+esac
 case ";$PROMPT_COMMAND;" in
   *"history -a"*) ;;
   *) PROMPT_COMMAND="history -a${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;

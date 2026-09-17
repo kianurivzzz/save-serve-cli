@@ -44,6 +44,25 @@ func TestScriptBash(t *testing.T) {
 	}
 }
 
+func TestBashHistorySurvivesKill(t *testing.T) {
+	home := t.TempDir()
+	rc := filepath.Join(home, ".bashrc")
+	os.WriteFile(rc, []byte("HISTFILE=/dev/null\nexport PROMPT_COMMAND='echo; echo; echo'\n"), 0o644)
+	os.WriteFile(filepath.Join(home, ".bash_history"), []byte("echo old\n"), 0o600)
+	run(t, home, "/bin/bash")
+	cmd := exec.Command("bash", "--rcfile", rc, "-i")
+	cmd.Stdin = strings.NewReader("echo sv-marker\nkill -9 $$\n")
+	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+	out, _ := cmd.CombinedOutput()
+	data, err := os.ReadFile(filepath.Join(home, ".bash_history"))
+	if err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if !strings.Contains(string(data), "echo sv-marker") {
+		t.Errorf("command must reach the history file before the shell dies:\n%s", data)
+	}
+}
+
 func TestScriptZshNoRc(t *testing.T) {
 	home := t.TempDir()
 	run(t, home, "/usr/bin/zsh")
